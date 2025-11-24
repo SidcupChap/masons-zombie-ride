@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { GenerationMode } from "../types";
 
@@ -5,7 +6,7 @@ import { GenerationMode } from "../types";
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string;
 
 if (!apiKey) {
-  throw new Error("Missing VITE_GEMINI_API_KEY – check Vercel environment variables.");
+  throw new Error("Missing VITE_GEMINI_API_KEY – check Vercel env vars.");
 }
 
 // Initialize Gemini client
