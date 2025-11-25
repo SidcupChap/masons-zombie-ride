@@ -250,7 +250,7 @@ const App: React.FC = () => {
             Apocalypse <span className="text-transparent bg-clip-text bg-gradient-to-r from-lime-400 to-emerald-600 drop-shadow-[0_0_15px_rgba(132,204,22,0.5)]">Ready</span>
           </h2>
           <p className="text-zinc-400 max-w-xl mx-auto text-sm sm:text-base">
-            Upload your vehicle. The AI will equip it with armor, weapons, and the official <span className="text-lime-400 font-bold ml-1">COMMANDER MASON</span> seal of approval.
+            Upload your vehicle. The AI will equip it with armour, weapons, and the official <span className="text-lime-400 font-bold ml-1">COMMANDER MASON</span> seal of approval.
           </p>
         </div>
 

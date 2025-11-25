@@ -21,7 +21,7 @@ const getSystemInstruction = (mode: GenerationMode): string => {
   MANDATORY REQUIREMENT: The name "MASON" must be visible on the vehicle or background.
   - As a metal plate welded to the door.
   - As a neon sign reflecting in a puddle.
-  - As graffiti spray-painted on the armor.
+  - As graffiti spray-painted on the armour.
   
   STYLE GUIDES:
   - ${GenerationMode.SURVIVAL}: "Mad Max" vibes. Spikes, rusty metal, miniguns on roof, heavy off-road tires. The text "MASON" is welded steel.
