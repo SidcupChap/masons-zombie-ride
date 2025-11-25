@@ -5,6 +5,15 @@ import { ImageUploader } from './components/ImageUploader';
 import { Button } from './components/Button';
 import { GenerationMode, LoadingState } from './types';
 
+// ---- Types for Mason's Garage ----------------------------------------
+
+type ZombieRide = {
+  id: string;
+  image: string;      // data URL from Gemini
+  mode: GenerationMode;
+  createdAt: string;  // human readable timestamp
+};
+
 // Survivor Card Component
 const SurvivorCard = () => (
   <div className="bg-gradient-to-br from-zinc-900 to-black border-2 border-zinc-800 p-4 rounded-xl relative overflow-hidden group shadow-lg shadow-lime-900/10">
@@ -45,6 +54,60 @@ const App: React.FC = () => {
   const [customPrompt, setCustomPrompt] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
+  // ---- Mason's Garage state ------------------------------------------
+
+  const [garage, setGarage] = useState<ZombieRide[]>([]);
+
+  // Load saved rides from localStorage on first load
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("mason_zombie_garage_v1");
+      if (saved) {
+        const parsed: ZombieRide[] = JSON.parse(saved);
+        setGarage(parsed);
+      }
+    } catch (e) {
+      console.warn("Could not load Mason's garage from localStorage", e);
+    }
+  }, []);
+
+  const saveGarage = (rides: ZombieRide[]) => {
+    setGarage(rides);
+    try {
+      localStorage.setItem("mason_zombie_garage_v1", JSON.stringify(rides));
+    } catch (e) {
+      console.warn("Could not save Mason's garage", e);
+    }
+  };
+
+  const handleSaveToGarage = () => {
+    if (!generatedImage) return;
+
+    const ride: ZombieRide = {
+      id: crypto.randomUUID(),
+      image: generatedImage,
+      mode,
+      createdAt: new Date().toLocaleString(),
+    };
+
+    const updated = [ride, ...garage];
+    saveGarage(updated);
+  };
+
+  const handleDeleteRide = (id: string) => {
+    const updated = garage.filter((r) => r.id !== id);
+    saveGarage(updated);
+  };
+
+  const handleLoadRide = (id: string) => {
+    const ride = garage.find((r) => r.id === id);
+    if (!ride) return;
+    setGeneratedImage(ride.image);
+    setMode(ride.mode);
+  };
+
+  // ---- Main generation logic -----------------------------------------
+
   const handleGenerate = async () => {
     if (!sourceImage) {
       setError("Mason needs a vehicle to upgrade! Upload a photo first.");
@@ -73,6 +136,8 @@ const App: React.FC = () => {
         }
       }, 1200);
 
+      // NOTE: your original code calls generateZombieCar here.
+      // If that's a wrapper around createZombieVehicle, keep it as-is.
       const resultBase64 = await generateZombieCar(sourceImage, mode, customPrompt);
       
       clearInterval(interval);
@@ -304,20 +369,31 @@ const App: React.FC = () => {
                         <p className="text-zinc-500 text-[10px]">{new Date().toLocaleString()}</p>
                       </div>
                     </div>
-                    <div className="flex gap-2 w-full sm:w-auto">
-                       <Button variant="secondary" onClick={handleShareImage} className="flex-1 sm:flex-none py-2 px-4 text-xs flex items-center justify-center gap-2">
-                         <Share2 className="w-4 h-4" /> <span className="sm:hidden">Share</span> <span className="hidden sm:inline">Share Image</span>
-                       </Button>
-                       <Button variant="primary" onClick={handleDownload} className="flex-1 sm:flex-none py-2 px-4 text-xs flex items-center justify-center gap-2">
-                         <Download className="w-4 h-4" /> <span className="sm:hidden">Save</span> <span className="hidden sm:inline">Download HD</span>
-                       </Button>
+
+                    <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                      <Button
+                        variant="secondary"
+                        onClick={handleSaveToGarage}
+                        className="flex-1 sm:flex-none py-2 px-4 text-xs flex items-center justify-center gap-2"
+                      >
+                        <Car className="w-4 h-4" /> Save to Garage
+                      </Button>
+
+                      <div className="flex gap-2 w-full sm:w-auto">
+                        <Button variant="secondary" onClick={handleShareImage} className="flex-1 sm:flex-none py-2 px-4 text-xs flex items-center justify-center gap-2">
+                          <Share2 className="w-4 h-4" /> <span className="sm:hidden">Share</span> <span className="hidden sm:inline">Share Image</span>
+                        </Button>
+                        <Button variant="primary" onClick={handleDownload} className="flex-1 sm:flex-none py-2 px-4 text-xs flex items-center justify-center gap-2">
+                          <Download className="w-4 h-4" /> <span className="sm:hidden">Save</span> <span className="hidden sm:inline">Download HD</span>
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Gallery / History Placeholder */}
+            {/* Fun tips under the current image */}
             {generatedImage && (
               <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in slide-in-from-bottom-4">
                  <div className="bg-zinc-900/80 p-5 rounded-xl border border-zinc-800 hover:border-lime-500/30 transition-all group">
@@ -340,6 +416,55 @@ const App: React.FC = () => {
                  </div>
               </div>
             )}
+
+            {/* 🧟 Mason's Zombie Garage */}
+            <section className="mt-10 border-t border-zinc-800 pt-6">
+              <h2 className="text-xl font-zombie text-lime-400 mb-3 flex items-center gap-2">
+                <Car className="w-5 h-5 text-lime-400" />
+                Mason's Zombie Garage
+              </h2>
+
+              {garage.length === 0 ? (
+                <p className="text-sm text-zinc-500">
+                  No rides saved yet. Once Mason mutates a vehicle, hit{" "}
+                  <span className="text-lime-400 font-semibold">Save to Garage</span> to store it here.
+                </p>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {garage.map((ride) => (
+                    <div
+                      key={ride.id}
+                      className="bg-zinc-900/80 border border-zinc-800 rounded-xl p-3 flex flex-col gap-2 hover:border-lime-500/40 transition-colors"
+                    >
+                      <div
+                        className="relative cursor-pointer group"
+                        onClick={() => handleLoadRide(ride.id)}
+                        title="Load this ride"
+                      >
+                        <img
+                          src={ride.image}
+                          alt={`Zombie ride (${ride.mode})`}
+                          className="rounded-lg border border-zinc-700 group-hover:border-lime-500/60 transition-colors"
+                        />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[11px] text-lime-300 font-mono uppercase tracking-wide transition-opacity">
+                          Tap to Load
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-zinc-400 space-y-1">
+                        <div>Mode: <span className="uppercase text-zinc-200">{ride.mode}</span></div>
+                        <div>Saved: {ride.createdAt}</div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteRide(ride.id)}
+                        className="mt-1 self-end text-[11px] text-red-400 hover:text-red-300"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
         </div>
       </main>
