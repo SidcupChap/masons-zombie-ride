@@ -85,8 +85,8 @@ export const DriveMode: React.FC<DriveModeProps> = ({
     let position = 0; // distance along road
     let playerX = 0; // lateral offset (-2..2)
     let speedVal = 0;
-    let maxSpeed = tunedMaxSpeed;
-    let accel = 100;
+    const maxSpeed = tunedMaxSpeed;
+    const accel = 100;
     let healthVal = 100;
     let scoreVal = 0;
     let gameRunning = true;
@@ -149,7 +149,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
       },
     };
 
-    // Build road segments – NOTE: we now set world.x = 0 and world.y = 0
+    // Build road segments
     const resetRoad = () => {
       for (let i = 0; i < 500; i++) {
         segments[i] = {
@@ -204,7 +204,6 @@ export const DriveMode: React.FC<DriveModeProps> = ({
         x: (Math.random() - 0.5) * 2,
       });
 
-      // moan
       if (zombieAudioRef.current) {
         zombieAudioRef.current.currentTime = 0;
         zombieAudioRef.current.play().catch(() => {});
@@ -238,7 +237,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
       );
 
       // steering
-      const dx = dt * 4 * (speedVal / maxSpeed);
+      const dx = dt * 4 * (speedVal / maxSpeed || 1);
       if (keys[37] || keys[65] || touchLeft) playerX -= dx; // left
       if (keys[39] || keys[68] || touchRight) playerX += dx; // right
       playerX = Util.limit(playerX, -2, 2);
@@ -260,6 +259,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
           healthVal -= 20;
           scoreVal += 10;
           if (healthVal <= 0) {
+            healthVal = 0;
             gameRunning = false;
             setGameOver(true);
             if (engineAudioRef.current) engineAudioRef.current.pause();
@@ -371,7 +371,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
         maxY = segment.p2.screen.y;
       }
 
-      // Zombies – NOTE: we now set world.y = 0
+      // Zombies
       zombies.forEach((z) => {
         const proj: any = {
           world: { x: z.x * roadWidth, y: 0, z: position + z.offsetZ },
@@ -495,7 +495,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
     setHealth(100);
     setSpeed(0);
     setScore(0);
-    setRunId((id) => id + 1);
+    setRunId((id) => id + 1); // force effect to rerun with fresh local vars
   };
 
   return (
