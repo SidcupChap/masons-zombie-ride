@@ -13,7 +13,7 @@
     <meta property="og:image" content="https://images.unsplash.com/photo-1599933597022-79339a04f98a?q=80&w=1200&auto=format&fit=crop" />
 
     <!-- 🚀 PWA Manifest -->
-    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="manifest" href="/manifest.webmanifest" />
 
     <!-- 🚀 PWA Icons -->
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
@@ -29,7 +29,7 @@
 
     <!-- Tailwind + Fonts -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Roboto+Mono:wght@400;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Roboto+Mono:wght@400;700;900&display=swap" rel="stylesheet" />
     
     <style>
       body {
@@ -61,7 +61,7 @@
         animation: float 3s ease-in-out infinite;
       }
 
-      /* 🔥 INSTALL POPUP STYLES (ADDED) */
+      /* 🔥 INSTALL POPUP STYLES */
       #install-banner {
         position: fixed;
         left: 0;
@@ -114,4 +114,80 @@
     <script type="importmap">
     {
       "imports": {
-        "react-dom/":
+        "react": "https://aistudiocdn.com/react@^19.2.0",
+        "react/": "https://aistudiocdn.com/react@^19.2.0/",
+        "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0",
+        "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+        "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
+        "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0"
+      }
+    }
+    </script>
+
+    <!-- Vite CSS -->
+    <link rel="stylesheet" href="/index.css" />
+  </head>
+
+  <body>
+    <div id="root"></div>
+
+    <!-- 🔥 INSTALL BANNER HTML -->
+    <div id="install-banner">
+      <div id="install-banner-inner">
+        <div id="install-text">
+          <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.12em; color: #a1a1aa;">
+            Commander Mason
+          </div>
+          <div style="font-weight: 800; font-size: 0.95rem; color: #f4f4f5;">
+            Add Zombie Garage to your home screen?
+          </div>
+          <div style="font-size: 0.75rem; color: #a1a1aa;">
+            Opens full-screen, just like a real game.
+          </div>
+        </div>
+        <div id="install-buttons">
+          <button id="install-dismiss" class="install-btn install-btn-secondary">
+            Not now
+          </button>
+          <button id="install-confirm" class="install-btn install-btn-primary">
+            Install
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vite Entry -->
+    <script type="module" src="/index.tsx"></script>
+
+    <!-- 🔥 INSTALL BANNER SCRIPT -->
+    <script>
+      let deferredPrompt = null;
+      const banner = document.getElementById('install-banner');
+      const btnConfirm = document.getElementById('install-confirm');
+      const btnDismiss = document.getElementById('install-dismiss');
+
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        if (banner) banner.style.display = 'flex';
+      });
+
+      if (btnConfirm) {
+        btnConfirm.addEventListener('click', async () => {
+          if (!deferredPrompt) return;
+          banner.style.display = 'none';
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          deferredPrompt = null;
+        });
+      }
+
+      if (btnDismiss) {
+        btnDismiss.addEventListener('click', () => {
+          if (banner) banner.style.display = 'none';
+          deferredPrompt = null;
+        });
+      }
+    </script>
+  </body>
+</html>
