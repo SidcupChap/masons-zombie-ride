@@ -20,8 +20,8 @@ type ScoreEntry = {
 };
 
 const TRACK_LENGTH = 800; // meters
-const CAR_SPEED = 70; // m/s (roughly, for timing)
-const ZOMBIE_SPEED = 40; // arbitrary units per second on screen
+const CAR_SPEED = 70; // m/s-ish
+const ZOMBIE_SPEED = 40; // screen units per second
 const ZOMBIE_SPAWN_INTERVAL = 900; // ms
 const STORAGE_KEY = "mz_drive_scores";
 
@@ -30,7 +30,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
   carImageUrl,
   onExit,
 }) => {
-  const [lane, setLane] = useState(1); // middle lane 0,1,2
+  const [lane, setLane] = useState(1); // 0,1,2
   const [zombies, setZombies] = useState<Zombie[]>([]);
   const [distance, setDistance] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -55,7 +55,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
     }
   }, []);
 
-  // Keyboard controls (desktop)
+  // Keyboard controls
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (!isRunning) return;
@@ -84,80 +84,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
     }
   };
 
-  // Game loop
-  useEffect(() => {
-    if (!isRunning || isFinished) return;
-
-    const tick = (timestamp: number) => {
-      if (!lastTickRef.current) lastTickRef.current = timestamp;
-      const delta = (timestamp - lastTickRef.current) / 1000;
-      lastTickRef.current = timestamp;
-
-      // Update distance + time
-      setDistance((prev) => {
-        const next = prev + CAR_SPEED * delta;
-        if (next >= TRACK_LENGTH) {
-          handleFinish("finished", next, elapsedTime + delta);
-          return TRACK_LENGTH;
-        }
-        return next;
-      });
-
-      setElapsedTime((prev) => prev + delta);
-
-      // Move zombies
-      setZombies((prev) =>
-        prev
-          .map((z) => ({ ...z, y: z.y - ZOMBIE_SPEED * delta }))
-          .filter((z) => z.y > -10)
-      );
-
-      // Collision check
-      setZombies((prev) => {
-        // Approx car hitbox zone
-        const carY = 15;
-        const hit = prev.some(
-          (z) =>
-            z.lane === lane && z.y < carY + 10 && z.y > carY - 10
-        );
-        if (hit) {
-          handleFinish("crash", distance, elapsedTime);
-          return [];
-        }
-        return prev;
-      });
-
-      if (!isFinished) {
-        requestAnimationFrame(tick);
-      }
-    };
-
-    const id = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRunning, isFinished, lane]);
-
-  // Spawn zombies periodically
-  useEffect(() => {
-    if (!isRunning || isFinished) return;
-
-    spawnTimerRef.current = window.setInterval(() => {
-      setZombies((prev) => [
-        ...prev,
-        {
-          id: zombieIdRef.current++,
-          lane: Math.floor(Math.random() * 3),
-          y: 110, // above top, falls down
-        },
-      ]);
-    }, ZOMBIE_SPAWN_INTERVAL);
-
-    return () => {
-      if (spawnTimerRef.current) window.clearInterval(spawnTimerRef.current);
-    };
-  }, [isRunning, isFinished]);
-
-  const handleFinish = (
+  const finishRun = (
     why: "crash" | "finished",
     finalDistance: number,
     finalTime: number
@@ -179,15 +106,88 @@ export const DriveMode: React.FC<DriveModeProps> = ({
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       const prev: ScoreEntry[] = stored ? JSON.parse(stored) : [];
-      const updated = [...prev, newEntry].sort(
-        (a, b) => b.distance - a.distance
-      ).slice(0, 20);
+      const updated = [...prev, newEntry]
+        .sort((a, b) => b.distance - a.distance)
+        .slice(0, 20);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       setScores(updated);
     } catch {
       // ignore
     }
   };
+
+  // Game loop
+  useEffect(() => {
+    if (!isRunning || isFinished) return;
+
+    const tick = (timestamp: number) => {
+      if (!lastTickRef.current) lastTickRef.current = timestamp;
+      const delta = (timestamp - lastTickRef.current) / 1000;
+      lastTickRef.current = timestamp;
+
+      // distance + time
+      setElapsedTime((prev) => prev + delta);
+      setDistance((prev) => {
+        const next = prev + CAR_SPEED * delta;
+        if (next >= TRACK_LENGTH && !isFinished) {
+          finishRun("finished", TRACK_LENGTH, elapsedTime + delta);
+          return TRACK_LENGTH;
+        }
+        return next;
+      });
+
+      // Move zombies AND do lane-specific collision
+      setZombies((prev) => {
+        const moved = prev
+          .map((z) => ({ ...z, y: z.y - ZOMBIE_SPEED * delta }))
+          .filter((z) => z.y > -20); // drop off-screen ones
+
+        const carY = 15; // same space as z.y (0 bottom → 100 top)
+        const margin = 10;
+
+        const hit = moved.some(
+          (z) =>
+            z.lane === lane &&
+            z.y < carY + margin &&
+            z.y > carY - margin
+        );
+
+        if (hit && !isFinished) {
+          finishRun("crash", distance, elapsedTime);
+        }
+
+        return moved;
+      });
+
+      if (!isFinished) {
+        requestAnimationFrame(tick);
+      }
+    };
+
+    const id = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRunning, isFinished, lane, distance, elapsedTime]);
+
+  // Spawn zombies periodically
+  useEffect(() => {
+    if (!isRunning || isFinished) return;
+
+    spawnTimerRef.current = window.setInterval(() => {
+      setZombies((prev) => [
+        ...prev,
+        {
+          id: zombieIdRef.current++,
+          lane: Math.floor(Math.random() * 3),
+          y: 110, // above top, falls down
+        },
+      ]);
+    }, ZOMBIE_SPAWN_INTERVAL);
+
+    return () => {
+      if (spawnTimerRef.current) window.clearInterval(spawnTimerRef.current);
+    };
+  }, [isRunning, isFinished]);
 
   const handleRetry = () => {
     setLane(1);
@@ -199,6 +199,8 @@ export const DriveMode: React.FC<DriveModeProps> = ({
     lastTickRef.current = null;
     setIsRunning(true);
   };
+
+  const carLeft = lane === 0 ? "16.5%" : lane === 1 ? "50%" : "83.5%";
 
   return (
     <div className="fixed inset-0 z-40 bg-slate-950/95 text-slate-50 flex flex-col">
@@ -241,53 +243,67 @@ export const DriveMode: React.FC<DriveModeProps> = ({
         onTouchStart={handleTouch}
       >
         <div className="relative w-full max-w-md h-full max-h-[520px] bg-gradient-to-b from-slate-900 to-slate-950 rounded-2xl border border-slate-800 overflow-hidden">
-          {/* Road background */}
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_#0f172a,_#020617)] opacity-70" />
-
-          {/* Lane lines */}
-          <div className="absolute inset-y-0 left-1/3 w-px border-l border-dashed border-slate-600/60" />
-          <div className="absolute inset-y-0 left-2/3 w-px border-l border-dashed border-slate-600/60" />
-
-          {/* Finish line */}
-          <div className="absolute top-4 left-0 right-0 flex justify-center">
-            <div className="w-40 h-3 bg-[repeating-linear-gradient(90deg,_#fbbf24,_#fbbf24_8px,_#000_8px,_#000_16px)] rounded-sm shadow-md shadow-yellow-500/30" />
-          </div>
-
-          {/* Zombies */}
-          {zombies.map((z) => {
-            const laneX = z.lane === 0 ? "16.5%" : z.lane === 1 ? "50%" : "83.5%";
-            return (
-              <div
-                key={z.id}
-                className="absolute w-10 h-10 -translate-x-1/2 rounded-md bg-rose-600/90 border border-rose-300/80 flex items-center justify-center text-[10px] font-semibold shadow-lg shadow-rose-900/70"
-                style={{
-                  left: laneX,
-                  bottom: `${z.y}%`,
-                }}
-              >
-                🧟
-              </div>
-            );
-          })}
-
-          {/* Car */}
+          {/* Cockpit-style transformed track */}
           <div
-            className="absolute bottom-6 w-14 h-16 -translate-x-1/2 rounded-xl border border-emerald-300/80 bg-emerald-600/80 flex items-center justify-center shadow-[0_0_25px_rgba(16,185,129,0.7)]"
+            className="absolute inset-0 origin-[50%_120%]"
             style={{
-              left: lane === 0 ? "16.5%" : lane === 1 ? "50%" : "83.5%",
+              transform: "perspective(900px) rotateX(55deg)",
             }}
           >
-            {carImageUrl ? (
-              <img
-                src={carImageUrl}
-                alt={rideName}
-                className="w-full h-full object-cover rounded-xl"
-              />
-            ) : (
-              <span className="text-[10px] text-slate-900 font-bold">
-                RIDE
-              </span>
-            )}
+            {/* Road background */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_#0f172a,_#020617)] opacity-80" />
+
+            {/* Lane lines (look narrower at top thanks to perspective) */}
+            <div className="absolute inset-y-0 left-1/3 w-px border-l border-dashed border-slate-600/60" />
+            <div className="absolute inset-y-0 left-2/3 w-px border-l border-dashed border-slate-600/60" />
+
+            {/* Finish line */}
+            <div className="absolute top-6 left-0 right-0 flex justify-center">
+              <div className="w-40 h-3 bg-[repeating-linear-gradient(90deg,_#fbbf24,_#fbbf24_8px,_#000_8px,_#000_16px)] rounded-sm shadow-md shadow-yellow-500/30" />
+            </div>
+
+            {/* Zombies with fake 3D scale */}
+            {zombies.map((z) => {
+              const laneX =
+                z.lane === 0 ? "16.5%" : z.lane === 1 ? "50%" : "83.5%";
+
+              // clamp y to 0–100 for scaling
+              const clampedY = Math.max(0, Math.min(100, z.y));
+              // smaller at the top, larger near the player
+              const scale = 0.4 + (100 - clampedY) / 90;
+
+              return (
+                <div
+                  key={z.id}
+                  className="absolute w-10 h-10 -translate-x-1/2 rounded-md bg-rose-600/90 border border-rose-300/80 flex items-center justify-center text-[10px] font-semibold shadow-lg shadow-rose-900/70"
+                  style={{
+                    left: laneX,
+                    bottom: `${z.y}%`,
+                    transform: `translateX(-50%) translateY(10%) scale(${scale})`,
+                  }}
+                >
+                  🧟
+                </div>
+              );
+            })}
+
+            {/* Car (bottom, closer to camera) */}
+            <div
+              className="absolute bottom-4 w-20 h-20 -translate-x-1/2 rounded-xl border border-emerald-300/80 bg-emerald-600/80 flex items-center justify-center shadow-[0_0_25px_rgba(16,185,129,0.7)]"
+              style={{ left: carLeft, transform: "translateX(-50%) scale(1.1)" }}
+            >
+              {carImageUrl ? (
+                <img
+                  src={carImageUrl}
+                  alt={rideName}
+                  className="w-full h-full object-cover rounded-xl"
+                />
+              ) : (
+                <span className="text-[10px] text-slate-900 font-bold">
+                  RIDE
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
