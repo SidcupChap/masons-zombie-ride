@@ -138,7 +138,7 @@ const App: React.FC = () => {
 
       // NOTE: your original code calls generateZombieCar here.
       // If that's a wrapper around createZombieVehicle, keep it as-is.
-      const resultBase64 = await generateZombieCar(sourceImage, mode, customPrompt);
+      const resultBase64 = await generateZombieCar(sourceImage, mode);
       
       clearInterval(interval);
       setGeneratedImage(resultBase64);
