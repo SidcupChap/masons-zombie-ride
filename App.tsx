@@ -5,8 +5,8 @@ import { generateZombieCar } from "./services/geminiService";
 
 import { ImageUploader } from './components/ImageUploader';
 import { Button } from './components/Button';
+import { DriveMode } from './components/DriveMode';
 import { GenerationMode, LoadingState } from './types';
-
 
 // ---- Types for Mason's Garage ----------------------------------------
 
@@ -56,6 +56,13 @@ const App: React.FC = () => {
   const [mode, setMode] = useState<GenerationMode>(GenerationMode.SURVIVAL);
   const [customPrompt, setCustomPrompt] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+
+  // ---- Drive Mode state (new) ----------------------------------------
+
+  const [driveRide, setDriveRide] = useState<{
+    rideName: string;
+    imageUrl: string;
+  } | null>(null);
 
   // ---- Mason's Garage state ------------------------------------------
 
@@ -139,9 +146,7 @@ const App: React.FC = () => {
         }
       }, 1200);
 
-      // NOTE: your original code calls generateZombieCar here.
-      // If that's a wrapper around createZombieVehicle, keep it as-is.
-      const resultBase64 = await generateZombieCar(sourceImage, mode);
+      const resultBase64 = await generateZombieCar(sourceImage, mode, customPrompt);
       
       clearInterval(interval);
       setGeneratedImage(resultBase64);
@@ -187,7 +192,6 @@ const App: React.FC = () => {
     if (!generatedImage) return;
 
     try {
-      // Fetch the base64 image and convert to blob for sharing
       const res = await fetch(generatedImage);
       const blob = await res.blob();
       const file = new File([blob], "mason-zombie-ride.png", { type: "image/png" });
@@ -199,7 +203,6 @@ const App: React.FC = () => {
           files: [file]
         });
       } else {
-        // Fallback to regular download if sharing files isn't supported (desktop)
         handleDownload();
       }
     } catch (error) {
@@ -343,7 +346,6 @@ const App: React.FC = () => {
           <div className="lg:col-span-7">
             <div className="relative rounded-2xl overflow-hidden border border-zinc-800 bg-black shadow-2xl min-h-[400px] sm:min-h-[600px] flex items-center justify-center group">
               
-              {/* Decorative elements */}
               <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
               
               {!generatedImage ? (
@@ -457,6 +459,20 @@ const App: React.FC = () => {
                         <div>Mode: <span className="uppercase text-zinc-200">{ride.mode}</span></div>
                         <div>Saved: {ride.createdAt}</div>
                       </div>
+
+                      {/* New: Drive this ride button */}
+                      <button
+                        onClick={() =>
+                          setDriveRide({
+                            rideName: `${ride.mode} • ${ride.createdAt}`,
+                            imageUrl: ride.image,
+                          })
+                        }
+                        className="mt-1 self-stretch text-[11px] px-3 py-1 rounded-md bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-center"
+                      >
+                        Drive this ride
+                      </button>
+
                       <button
                         onClick={() => handleDeleteRide(ride.id)}
                         className="mt-1 self-end text-[11px] text-red-400 hover:text-red-300"
@@ -471,6 +487,15 @@ const App: React.FC = () => {
           </div>
         </div>
       </main>
+
+      {/* Drive Mode overlay */}
+      {driveRide && (
+        <DriveMode
+          rideName={driveRide.rideName}
+          carImageUrl={driveRide.imageUrl}
+          onExit={() => setDriveRide(null)}
+        />
+      )}
     </div>
   );
 };
