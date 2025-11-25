@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "name": "Commander Mason's Zombie Garage",
+  "short_name": "Zombie Garage",
+  "description": "Build unstoppable zombie apocalypse vehicles for Commander Mason.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "prefer_related_applications": false
+}
