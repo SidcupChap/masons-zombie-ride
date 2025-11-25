@@ -1,3 +1,4 @@
+// src/components/DriveMode.tsx
 import React, { useEffect, useRef, useState } from "react";
 
 type DriveModeProps = {
@@ -22,6 +23,18 @@ export const DriveMode: React.FC<DriveModeProps> = ({
 
   const engineAudioRef = useRef<HTMLAudioElement | null>(null);
   const zombieAudioRef = useRef<HTMLAudioElement | null>(null);
+  const carImgRef = useRef<HTMLImageElement | null>(null);
+
+  // preload car image whenever it changes
+  useEffect(() => {
+    if (!carImageUrl) {
+      carImgRef.current = null;
+      return;
+    }
+    const img = new Image();
+    img.src = carImageUrl;
+    carImgRef.current = img;
+  }, [carImageUrl]);
 
   // --- derive tuning from rideName (fake “stats” for now) ----
   const baseMaxSpeed = 200;
@@ -32,7 +45,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
     .reduce((a, b) => a + b, 0);
 
   const speedMult = 0.85 + (nameHash % 30) / 100; // 0.85–1.15
-  const widthMult = 0.9 + (nameHash % 20) / 100;  // 0.9–1.1
+  const widthMult = 0.9 + (nameHash % 20) / 100; // 0.9–1.1
 
   const tunedMaxSpeed = baseMaxSpeed * speedMult;
   const tunedRoadWidth = baseRoadWidth * widthMult;
@@ -99,6 +112,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
     const fieldOfView = 100;
     const cameraHeight = 1000;
     const cameraDepth = 1 / Math.tan((fieldOfView / 2) * Math.PI / 360);
+    const fogDensity = 8;
 
     const Util = {
       project(
@@ -113,17 +127,18 @@ export const DriveMode: React.FC<DriveModeProps> = ({
       ) {
         p.camera = p.camera || {};
         p.screen = p.screen || {};
-        p.camera.x = p.world.x - camX;
-        p.camera.y = p.world.y - camY;
+        p.camera.x = (p.world.x ?? 0) - camX;
+        p.camera.y = (p.world.y ?? 0) - camY;
         p.camera.z = p.world.z - camZ;
 
+        if (p.camera.z <= minZ) {
+          p.screen.scale = 0;
+          return;
+        }
+
         p.screen.scale = minZ / p.camera.z;
-        p.screen.x = Math.round(
-          w / 2 + p.screen.scale * p.camera.x * (w / 2)
-        );
-        p.screen.y = Math.round(
-          h / 2 + p.screen.scale * p.camera.y * (h / 2)
-        );
+        p.screen.x = Math.round(w / 2 + p.screen.scale * p.camera.x * (w / 2));
+        p.screen.y = Math.round(h / 2 + p.screen.scale * p.camera.y * (h / 2));
         p.screen.w = Math.round(p.screen.scale * roadW * (w / 2));
       },
       limit(val: number, min: number, max: number) {
@@ -134,14 +149,18 @@ export const DriveMode: React.FC<DriveModeProps> = ({
       },
     };
 
-    // Build road segments
+    // Build road segments – NOTE: we now set world.x = 0 and world.y = 0
     const resetRoad = () => {
       for (let i = 0; i < 500; i++) {
         segments[i] = {
           index: i,
-          p1: { world: { z: i * segmentLength, y: 0 }, camera: {}, screen: {} },
+          p1: {
+            world: { x: 0, y: 0, z: i * segmentLength },
+            camera: {},
+            screen: {},
+          },
           p2: {
-            world: { z: (i + 1) * segmentLength, y: 0 },
+            world: { x: 0, y: 0, z: (i + 1) * segmentLength },
             camera: {},
             screen: {},
           },
@@ -178,16 +197,14 @@ export const DriveMode: React.FC<DriveModeProps> = ({
     canvas.addEventListener("touchstart", handleTouchStart, { passive: false });
     canvas.addEventListener("touchend", handleTouchEnd);
 
-    // car sprite
-    const carImg = new Image();
-    carImg.src = carImageUrl;
-
+    // Spawn zombie
     const spawnZombie = () => {
       zombies.push({
         offsetZ: 50 + Math.random() * 300,
         x: (Math.random() - 0.5) * 2,
       });
 
+      // moan
       if (zombieAudioRef.current) {
         zombieAudioRef.current.currentTime = 0;
         zombieAudioRef.current.play().catch(() => {});
@@ -197,9 +214,10 @@ export const DriveMode: React.FC<DriveModeProps> = ({
     const update = (dt: number) => {
       if (!gameRunning) return;
 
+      // accel
       speedVal = Util.limit(speedVal + accel * dt, 0, maxSpeed);
 
-      // engine audio
+      // engine audio when moving
       if (engineAudioRef.current) {
         if (speedVal > 5) {
           if (engineAudioRef.current.paused) {
@@ -212,17 +230,20 @@ export const DriveMode: React.FC<DriveModeProps> = ({
         }
       }
 
+      // distance along road
       position = Util.increase(
         position,
         dt * speedVal,
         segments.length * segmentLength
       );
 
-      const dx = dt * 4 * (speedVal / maxSpeed || 1);
-      if (keys[37] || keys[65] || touchLeft) playerX -= dx;
-      if (keys[39] || keys[68] || touchRight) playerX += dx;
+      // steering
+      const dx = dt * 4 * (speedVal / maxSpeed);
+      if (keys[37] || keys[65] || touchLeft) playerX -= dx; // left
+      if (keys[39] || keys[68] || touchRight) playerX += dx; // right
       playerX = Util.limit(playerX, -2, 2);
 
+      // spawn logic
       lastSpawn += dt;
       if (lastSpawn > spawnRate) {
         spawnZombie();
@@ -230,6 +251,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
         spawnRate = Math.max(0.3, spawnRate - 0.001);
       }
 
+      // zombies move + collisions
       zombies = zombies.filter((z) => {
         z.offsetZ -= dt * speedVal;
         if (z.offsetZ < 0) return false;
@@ -247,19 +269,21 @@ export const DriveMode: React.FC<DriveModeProps> = ({
         return true;
       });
 
+      // scoring
       scoreVal += (dt * speedVal) / 10;
 
+      // push to HUD
       setSpeed(Math.floor(speedVal));
       setHealth(healthVal);
       setScore(Math.floor(scoreVal));
     };
 
     const render = () => {
+      ctx.save();
+      ctx.clearRect(0, 0, width, height);
+
       const w = width;
       const h = height;
-
-      ctx.save();
-      ctx.clearRect(0, 0, w, h);
 
       // Cockpit sides
       ctx.fillStyle = "#111";
@@ -273,7 +297,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
       ctx.fillStyle = gradient;
       ctx.fillRect(w * 0.2, 0, w * 0.6, h / 2);
 
-      // Road
+      // Road segments
       const camX = playerX * roadWidth;
       const baseSegmentIdx =
         Math.floor(position / segmentLength) % segments.length;
@@ -305,6 +329,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
         );
 
         if (
+          !segment.p1.screen.scale ||
           segment.p1.camera.z <= cameraDepth ||
           segment.p2.screen.y >= maxY
         )
@@ -346,10 +371,10 @@ export const DriveMode: React.FC<DriveModeProps> = ({
         maxY = segment.p2.screen.y;
       }
 
-      // Zombies
+      // Zombies – NOTE: we now set world.y = 0
       zombies.forEach((z) => {
         const proj: any = {
-          world: { x: z.x * roadWidth, z: position + z.offsetZ },
+          world: { x: z.x * roadWidth, y: 0, z: position + z.offsetZ },
           camera: {},
           screen: {},
         };
@@ -363,6 +388,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
           h,
           roadWidth
         );
+        if (!proj.screen.scale) return;
 
         const size = 40 + 100 / (1 + z.offsetZ / 100);
         ctx.save();
@@ -393,12 +419,12 @@ export const DriveMode: React.FC<DriveModeProps> = ({
       });
 
       // Car image bottom centre
-      if (carImageUrl && carImg.complete) {
+      if (carImgRef.current && carImgRef.current.complete) {
         const carW = w * 0.18;
         const carH = carW * 0.6;
         const x = w / 2 - carW / 2;
         const y = h * 0.7;
-        ctx.drawImage(carImg, x, y, carW, carH);
+        ctx.drawImage(carImgRef.current, x, y, carW, carH);
       }
 
       // Dashboard HUD
@@ -413,7 +439,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
       ctx.lineWidth = 3;
       ctx.strokeRect(dashX, dashY, dashW, dashH);
 
-      // Speedo
+      // Speedometer arc
       ctx.strokeStyle = "yellow";
       ctx.lineWidth = 5;
       ctx.beginPath();
@@ -453,7 +479,6 @@ export const DriveMode: React.FC<DriveModeProps> = ({
 
     requestAnimationFrame(loop);
 
-    // cleanup
     return () => {
       gameRunning = false;
       window.removeEventListener("resize", resize);
