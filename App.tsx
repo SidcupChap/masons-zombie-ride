@@ -5,7 +5,6 @@ import { generateZombieCar } from "./services/geminiService";
 
 import { ImageUploader } from './components/ImageUploader';
 import { Button } from './components/Button';
-import { DriveMode } from './components/DriveMode';
 import { GenerationMode, LoadingState } from './types';
 
 // ---- Types for Mason's Garage ----------------------------------------
@@ -56,13 +55,6 @@ const App: React.FC = () => {
   const [mode, setMode] = useState<GenerationMode>(GenerationMode.SURVIVAL);
   const [customPrompt, setCustomPrompt] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
-
-  // ---- Drive Mode state (new) ----------------------------------------
-
-  const [driveRide, setDriveRide] = useState<{
-    rideName: string;
-    imageUrl: string;
-  } | null>(null);
 
   // ---- Mason's Garage state ------------------------------------------
 
@@ -460,14 +452,11 @@ const App: React.FC = () => {
                         <div>Saved: {ride.createdAt}</div>
                       </div>
 
-                      {/* New: Drive this ride button */}
+                      {/* Drive this ride → go to arcade strip */}
                       <button
-                        onClick={() =>
-                          setDriveRide({
-                            rideName: `${ride.mode} • ${ride.createdAt}`,
-                            imageUrl: ride.image,
-                          })
-                        }
+                        onClick={() => {
+                          window.location.href = "/drive.html";
+                        }}
                         className="mt-1 self-stretch text-[11px] px-3 py-1 rounded-md bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-center"
                       >
                         Drive this ride
@@ -487,15 +476,6 @@ const App: React.FC = () => {
           </div>
         </div>
       </main>
-
-      {/* Drive Mode overlay */}
-      {driveRide && (
-        <DriveMode
-          rideName={driveRide.rideName}
-          carImageUrl={driveRide.imageUrl}
-          onExit={() => setDriveRide(null)}
-        />
-      )}
     </div>
   );
 };
