@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { Biohazard, Skull, Zap, Car, Download, Share2, AlertCircle, Shield, Users, Trophy, Radio } from 'lucide-react';
+import { generateZombieCar } from "./services/geminiService";import { Biohazard, Skull, Zap, Car, Download, Share2, AlertCircle, Shield, Users, Trophy, Radio } from 'lucide-react';
 import { generateZombiecar } from "./services/geminiService";
 import { ImageUploader } from './components/ImageUploader';
 import { Button } from './components/Button';
