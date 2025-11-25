@@ -1,8 +1,16 @@
 import { GoogleGenAI } from "@google/genai";
 import { GenerationMode } from "../types";
 
+// ✅ Vite-style env var (browser-safe)
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string;
+
+if (!apiKey) {
+  throw new Error("Missing VITE_GEMINI_API_KEY – check Vercel env vars!");
+}
+
 // Initialize the client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey });
+
 
 const getSystemInstruction = (mode: GenerationMode): string => {
   return `You are a legendary visual effects artist for a Zombie Apocalypse movie. 
