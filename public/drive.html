@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Commander Mason's Zombie Drive</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { margin: 0; padding: 0; overflow: hidden; }
+    body { background: #111; }
+    canvas { display: block; cursor: none; }
+    #hud { position: absolute; top: 10px; left: 10px; color: lime; font: bold 24px monospace; z-index: 10; }
+    #gameover { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: red; font: bold 48px monospace; text-align: center; display: none; z-index: 20; }
+  </style>
+</head>
+<body>
+  <button id="back" style="
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 20;
+  padding: 6px 10px;
+  background: rgba(0,0,0,0.7);
+  color: lime;
+  border: 1px solid lime;
+  font: 12px monospace;
+  cursor: pointer;
+">
+  Back to Garage
+</button>
+<canvas id="canvas"></canvas>
+  <div id="hud">Speed: <span id="speed">0</span> | Health: <span id="health">100</span> | Score: <span id="score">0</span></div>
+  <div id="gameover">
+    ZOMBIES OVERWHELMED!<br>Score: <span id="finalscore">0</span><br>Tap/Click to Restart
+  </div>
+  <script>
+    document.getElementById('back').addEventListener('click', () => {
+  window.location.href = '/';
+});
+const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const hudSpeed = document.getElementById('speed');
+    const hudHealth = document.getElementById('health');
+    const hudScore = document.getElementById('score');
+    const gameover = document.getElementById('gameover');
+    const finalScore = document.getElementById('finalscore');
+
+    // Game state
+    let width, height, resolution;
+    let position = 0; // Distance traveled
+    let playerX = 0; // Lateral position (-1 left, 0 center, 1 right)
+    let speed = 0;
+    let maxSpeed = 200;
+    let accel = 100;
+    let health = 100;
+    let score = 0;
+    let gameRunning = true;
+    let zombies = [];
+    let lastSpawn = 0;
+    let spawnRate = 1.5; // Seconds between spawns (decreases over time)
+    let keys = {};
+    let touchLeft = false, touchRight = false;
+
+    // Road config
+    const roadWidth = 2000;
+    const segmentLength = 200;
+    const segments = [];
+    const drawDistance = 200;
+    const fieldOfView = 100;
+    const cameraHeight = 1000;
+    let cameraDepth = 1 / Math.tan((fieldOfView / 2) * Math.PI / 360);
+    const lanes = 3;
+    const fogDensity = 8;
+
+    // Resize canvas
+    function resize() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+      resolution = height / 480; // Scale for perf
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Input
+    window.addEventListener('keydown', e => { keys[e.keyCode] = true; });
+    window.addEventListener('keyup', e => { keys[e.keyCode] = false; });
+    canvas.addEventListener('touchstart', e => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      if (touch.clientX < width / 2) touchLeft = true;
+      else touchRight = true;
+    }, { passive: false });
+    canvas.addEventListener('touchend', () => { touchLeft = touchRight = false; });
+    canvas.addEventListener('click', restart);
+
+    // Util helpers
+    const Util = {
+      project(p, camX, camY, camZ, minZ, w, h, roadW) {
+        p.camera.x = p.world.x - camX;
+        p.camera.y = p.world.y - camY;
+        p.camera.z = p.world.z - camZ;
+        p.screen.scale = minZ / p.camera.z;
+        p.screen.x = Math.round((w / 2) + (p.screen.scale * p.camera.x * (w / 2)));
+        p.screen.y = Math.round((h / 2) + (p.screen.scale * p.camera.y * (h / 2))); // Flip Y
+        p.screen.w = Math.round(p.screen.scale * roadW * (w / 2));
+      },
+      limit(val, min, max) { return Math.max(min, Math.min(max, val)); },
+      increase(current, amount, max) { return (current + amount) % max; }
+    };
+
+    // Build road segments (infinite loop)
+    function resetRoad() {
+      for (let i = 0; i < 500; i++) {
+        segments[i] = {
+          index: i,
+          p1: { world: { z: i * segmentLength, y: 0 }, camera: {}, screen: {} },
+          p2: { world: { z: (i + 1) * segmentLength, y: 0 }, camera: {}, screen: {} },
+          color: Math.floor(i / 3) % 2 ? '#555' : '#999' // Rumble stripes
+        };
+      }
+    }
+    resetRoad();
+
+    // Spawn zombie
+    function spawnZombie() {
+      zombies.push({
+        offsetZ: 50 + Math.random() * 300, // Distance ahead
+        x: (Math.random() - 0.5) * 2 // Random lane offset
+      });
+    }
+
+    // Update game
+    function update(dt) {
+      if (!gameRunning) return;
+
+      // Accelerate
+      speed = Util.limit(speed + accel * dt, 0, maxSpeed);
+
+      // Position
+      position = Util.increase(position, dt * speed, segments.length * segmentLength);
+
+      // Steer (smooth)
+      const dx = dt * 4 * (speed / maxSpeed);
+      if (keys[37] || keys[65] || touchLeft) playerX -= dx; // Left
+      if (keys[39] || keys[68] || touchRight) playerX += dx; // Right
+      playerX = Util.limit(playerX, -2, 2);
+
+      // Spawn zombies
+      lastSpawn += dt;
+      if (lastSpawn > spawnRate) {
+        spawnZombie();
+        lastSpawn = 0;
+        spawnRate = Math.max(0.3, spawnRate - 0.001); // Increase difficulty
+      }
+
+      // Update zombies
+      zombies = zombies.filter(z => {
+        z.offsetZ -= dt * speed;
+        if (z.offsetZ < 0) return false; // Off screen
+
+        // Collision (close + lane overlap)
+        if (z.offsetZ < cameraHeight && Math.abs(z.x - playerX) < 0.3) {
+          health -= 20;
+          score += 10; // "Kill" bonus?
+          if (health <= 0) {
+            gameRunning = false;
+            finalScore.textContent = Math.floor(score);
+            gameover.style.display = 'block';
+          }
+          return false;
+        }
+        return true;
+      });
+
+      // HUD updates
+      hudSpeed.textContent = Math.floor(speed);
+      hudHealth.textContent = health;
+      hudScore.textContent = Math.floor(score);
+      score += dt * speed / 10;
+    }
+
+    // Render
+    function render() {
+      ctx.save();
+      ctx.scale(resolution, resolution);
+      ctx.imageSmoothingEnabled = false;
+
+      // Cockpit sides (dark)
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, 0, width / resolution * 0.2, height / resolution);
+      ctx.fillRect(width / resolution * 0.8, 0, width / resolution * 0.2, height / resolution);
+
+      // Horizon/sky gradient
+      const gradient = ctx.createLinearGradient(0, 0, 0, height / resolution / 2);
+      gradient.addColorStop(0, '#87CEEB');
+      gradient.addColorStop(1, '#333');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(width / resolution * 0.2, 0, width / resolution * 0.6, height / resolution / 2);
+
+      // Road
+      const camX = playerX * roadWidth;
+      const baseSegmentIdx = Math.floor(position / segmentLength) % segments.length;
+      let maxY = height / resolution;
+
+      for (let n = 0; n < drawDistance; n++) {
+        const segIdx = (baseSegmentIdx + n) % segments.length;
+        const segment = segments[segIdx];
+
+        // Project ends
+        Util.project(segment.p1, camX, cameraHeight, position, cameraDepth, width / resolution, height / resolution, roadWidth);
+        Util.project(segment.p2, camX, cameraHeight, position, cameraDepth, width / resolution, height / resolution, roadWidth);
+
+        if (segment.p1.camera.z <= cameraDepth || segment.p2.screen.y >= maxY) continue;
+
+        // Fog (darker/fade distant)
+        const fog = Math.pow(1 - (segment.p2.camera.z / drawDistance / segmentLength), fogDensity);
+        ctx.fillStyle = segment.color.replace('5', Math.floor(5 * fog).toString(16)).replace('9', Math.floor(9 * fog).toString(16));
+
+        // Grass sides
+        ctx.fillStyle = '#0a0';
+        ctx.fillRect(0, segment.p1.screen.y, (width / resolution * 0.2), segment.p2.screen.y - segment.p1.screen.y);
+        ctx.fillRect((width / resolution * 0.8), segment.p1.screen.y, (width / resolution * 0.2), segment.p2.screen.y - segment.p1.screen.y);
+
+        // Road trapezoid
+        ctx.fillRect(segment.p1.screen.x - segment.p1.screen.w, segment.p1.screen.y, segment.p1.screen.w * 2, segment.p2.screen.y - segment.p1.screen.y);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(segment.p1.screen.x - 20, segment.p1.screen.y, 40, segment.p2.screen.y - segment.p1.screen.y); // Center line
+
+        maxY = segment.p2.screen.y;
+      }
+
+      // Zombies (projected)
+      zombies.forEach(z => {
+        const proj = { world: { x: z.x * roadWidth, z: position + z.offsetZ }, camera: {}, screen: {} };
+        Util.project(proj, camX, cameraHeight, position, cameraDepth, width / resolution, height / resolution, roadWidth);
+
+        // Scale by proximity (bigger as approach)
+        const size = 40 + (100 / (1 + z.offsetZ / 100));
+
+        // Zombie: green body, red head, arms lunge
+        ctx.save();
+        ctx.translate(proj.screen.x, proj.screen.y);
+        ctx.scale(size / 40, size / 40);
+        ctx.shadowColor = 'red';
+        ctx.shadowBlur = 20 * (100 - z.offsetZ) / 100; // Glow when close
+
+        // Body
+        ctx.fillStyle = '#0f0';
+        ctx.fillRect(-8, 0, 16, 30);
+        // Head
+        ctx.fillStyle = '#f00';
+        ctx.beginPath();
+        ctx.arc(0, -5, 12, 0, Math.PI * 2);
+        ctx.fill();
+        // Eyes
+        ctx.fillStyle = 'white';
+        ctx.beginPath();
+        ctx.arc(-4, -7, 3, 0, Math.PI * 2);
+        ctx.arc(4, -7, 3, 0, Math.PI * 2);
+        ctx.fill();
+        // Teeth (attack!)
+        ctx.fillStyle = 'white';
+        ctx.fillRect(-6, 2, 3, 4);
+        ctx.fillRect(-1, 2, 3, 4);
+        ctx.fillRect(3, 2, 3, 4);
+        ctx.restore();
+      });
+
+      // Cockpit HUD (dashboard)
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(width / resolution * 0.25, height / resolution * 0.75, width / resolution * 0.5, height / resolution * 0.25);
+      ctx.strokeStyle = "lime"; ctx.lineWidth = 3;
+      ctx.strokeRect(width / resolution * 0.25, height / resolution * 0.75, width / resolution * 0.5, height / resolution * 0.25);
+
+      // Speedometer arc
+      ctx.strokeStyle = 'yellow'; ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(width / 2 / resolution, height * 0.9 / resolution, 60, Math.PI * 0.75, Math.PI * 0.75 + (speed / maxSpeed) * Math.PI * 1.3);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // Game loop (fixed timestep)
+    let fps = 60;
+    let step = 1 / fps;
+    let lastTime = 0;
+    let accumulator = 0;
+
+    function loop(time) {
+      const dt = Math.min(1, (time - lastTime) / 1000);
+      lastTime = time;
+      accumulator += dt;
+
+      while (accumulator >= step) {
+        update(step);
+        accumulator -= step;
+      }
+
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    // Restart
+    function restart() {
+      position = playerX = speed = 0;
+      health = 100;
+      score = 0;
+      zombies = [];
+      spawnRate = 1.5;
+      gameRunning = true;
+      gameover.style.display = 'none';
+    }
+
+    // Start
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
