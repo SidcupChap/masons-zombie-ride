@@ -50,8 +50,8 @@ export const DriveMode: React.FC<DriveModeProps> = ({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let width = canvas.clientWidth;
-    let height = canvas.clientHeight;
+    let width = canvas.clientWidth || 320;
+    let height = canvas.clientHeight || 480;
     const dpr = window.devicePixelRatio || 1;
 
     const resize = () => {
@@ -75,10 +75,10 @@ export const DriveMode: React.FC<DriveModeProps> = ({
     zombieAudio.volume = 0.6;
     zombieAudioRef.current = zombieAudio;
 
-    // ---- SIMPLE TOP-DOWN GAME STATE ----
+    // ---- GAME STATE ----
     let speedVal = 0;
-    let maxSpeed = tunedMaxSpeed;
-    let accel = 180;
+    const maxSpeed = tunedMaxSpeed;
+    const accel = 180;
 
     const roadWidth = width * 0.6;
     const roadX = (width - roadWidth) / 2;
@@ -93,7 +93,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
     let spawnTimer = 0;
     let spawnInterval = 1.0; // seconds (will decrease slightly)
 
-    let laneStripeOffset = 0;
+    let laneStripeOffset = 0; // 0–1 for perspective stripes
 
     let healthVal = 100;
     let scoreVal = 0;
@@ -155,7 +155,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
       }
     };
 
-    // COLLISION (simple AABB)
+    // COLLISION (AABB)
     const rectanglesOverlap = (
       x1: number,
       y1: number,
@@ -169,8 +169,6 @@ export const DriveMode: React.FC<DriveModeProps> = ({
       return !(
         x1 + w1 < x2 ||
         x2 + w2 < x1 ||
-        y1 + h1 < y2 ||
-        y2 + h2 < x1 ||
         y1 + h1 < y2 ||
         y2 + h2 < y1
       );
@@ -210,8 +208,8 @@ export const DriveMode: React.FC<DriveModeProps> = ({
       carX = clamp(carX, carMinX, carMaxX);
 
       // lane stripes scroll (0–1 range for perspective stripes)
-laneStripeOffset = (laneStripeOffset + dt * (speedVal / maxSpeed) * 1.4) % 1;
-
+      laneStripeOffset =
+        (laneStripeOffset + dt * (speedVal / maxSpeed) * 1.4) % 1;
 
       // spawn zombies
       spawnTimer += dt;
@@ -265,219 +263,136 @@ laneStripeOffset = (laneStripeOffset + dt * (speedVal / maxSpeed) * 1.4) % 1;
       setScore(Math.round(scoreVal));
     };
 
-   const render = () => {
-  ctx.clearRect(0, 0, width, height);
+    const render = () => {
+      ctx.clearRect(0, 0, width, height);
 
-  // --- BACKGROUND ---
-  ctx.fillStyle = "#020617";
-  ctx.fillRect(0, 0, width, height);
-
-  // Sky
-  const horizonY = height * 0.38;
-  const skyGrad = ctx.createLinearGradient(0, 0, 0, horizonY);
-  skyGrad.addColorStop(0, "#6ec5ff");
-  skyGrad.addColorStop(1, "#1f2933");
-  ctx.fillStyle = skyGrad;
-  ctx.fillRect(0, 0, width, horizonY);
-
-  // Ground
-  const groundGrad = ctx.createLinearGradient(0, horizonY, 0, height);
-  groundGrad.addColorStop(0, "#020617");
-  groundGrad.addColorStop(1, "#020617");
-  ctx.fillStyle = groundGrad;
-  ctx.fillRect(0, horizonY, width, height - horizonY);
-
-  // --- OUTRUN-STYLE ROAD GEOMETRY ---
-  const roadCenterX = width / 2;
-  const roadBottomY = height;
-  const roadTopY = horizonY;
-
-  const roadBottomWidth = width * 0.95; // wide at camera
-  const roadTopWidth = width * 0.20;    // narrow at horizon
-
-  // Road body (big trapezoid)
-  ctx.fillStyle = "#111827";
-  ctx.beginPath();
-  ctx.moveTo(roadCenterX - roadTopWidth / 2, roadTopY);
-  ctx.lineTo(roadCenterX + roadTopWidth / 2, roadTopY);
-  ctx.lineTo(roadCenterX + roadBottomWidth / 2, roadBottomY);
-  ctx.lineTo(roadCenterX - roadBottomWidth / 2, roadBottomY);
-  ctx.closePath();
-  ctx.fill();
-
-  // Road glow edges
-  ctx.strokeStyle = "rgba(34,197,94,0.45)";
-  ctx.lineWidth = 10;
-  ctx.stroke();
-
-  // --- CENTER LANE STRIPES IN PERSPECTIVE ---
-  const stripeCount = 18;
-
-  const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-
-  ctx.strokeStyle = "#facc15";
-
-  for (let i = 0; i < stripeCount; i++) {
-    // t: 0 = horizon, 1 = bottom
-    const t = (i / stripeCount + laneStripeOffset) % 1;
-
-    const y = lerp(roadTopY, roadBottomY, t);
-    const nextY = lerp(roadTopY, roadBottomY, t + 0.04); // stripe length
-
-    // line width grows as it comes towards camera
-    const lineW = lerp(1.5, 7, t);
-
-    ctx.lineWidth = lineW;
-    ctx.beginPath();
-    ctx.moveTo(roadCenterX, y);
-    ctx.lineTo(roadCenterX, nextY);
-    ctx.stroke();
-  }
-
-  // --- ZOMBIES (same data, but slight scale based on Y for depth hint) ---
-  zombies.forEach((z) => {
-    const depthT = Math.max(0, Math.min(1, (z.y - roadTopY) / (roadBottomY - roadTopY)));
-    const scale = 0.6 + depthT * 0.9; // smaller far away, bigger near player
-
-    const drawSize = z.size * scale;
-
-    const screenX = z.x;
-    const screenY = z.y;
-
-    ctx.save();
-    ctx.translate(screenX + drawSize / 2, screenY + drawSize / 2);
-    ctx.shadowColor = "rgba(248, 113, 113, 0.8)";
-    ctx.shadowBlur = 18;
-
-    // body
-    ctx.fillStyle = "#22c55e";
-    ctx.fillRect(-drawSize / 2, -drawSize / 2, drawSize, drawSize * 0.7);
-
-    // head
-    ctx.beginPath();
-    ctx.fillStyle = "#16a34a";
-    ctx.arc(0, -drawSize * 0.3, drawSize * 0.35, 0, Math.PI * 2);
-    ctx.fill();
-
-    // eyes
-    ctx.fillStyle = "white";
-    ctx.beginPath();
-    ctx.arc(-drawSize * 0.12, -drawSize * 0.34, drawSize * 0.07, 0, Math.PI * 2);
-    ctx.arc(drawSize * 0.12, -drawSize * 0.34, drawSize * 0.07, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
-  });
-
-  // --- CAR (stays at bottom centre of road) ---
-  let carDrawX = carX;
-  const carDrawY = carY;
-
-  if (carImgRef.current && carImgRef.current.complete) {
-    ctx.drawImage(carImgRef.current, carDrawX, carDrawY, carWidth, carHeight);
-  } else {
-    ctx.fillStyle = "#38bdf8";
-    ctx.fillRect(carDrawX, carDrawY, carWidth, carHeight);
-  }
-
-  // --- DASHBOARD HUD ---
-  const dashW = width * 0.8;
-  const dashH = height * 0.16;
-  const dashX = (width - dashW) / 2;
-  const dashY = height - dashH - 10;
-
-  ctx.fillStyle = "rgba(0,0,0,0.7)";
-  ctx.fillRect(dashX, dashY, dashW, dashH);
-  ctx.strokeStyle = "#22c55e";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(dashX, dashY, dashW, dashH);
-
-  // speedometer arc (bottom middle)
-  ctx.strokeStyle = "#facc15";
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.arc(
-    width / 2,
-    dashY + dashH * 0.7,
-    54,
-    Math.PI * 0.75,
-    Math.PI * 0.75 + (speedVal / maxSpeed) * Math.PI * 1.4
-  );
-  ctx.stroke();
-
-  ctx.fillStyle = "#bbf7d0";
-  ctx.font = "14px monospace";
-  ctx.fillText(`SPD ${Math.round(speedVal)} km/h`, dashX + 18, dashY + 26);
-  ctx.fillText(`HP  ${healthVal}`, dashX + 18, dashY + 48);
-  ctx.fillText(`SC  ${Math.round(scoreVal)}`, dashX + 18, dashY + 70);
-};
-
-
-      // background
+      // --- BACKGROUND ---
       ctx.fillStyle = "#020617";
       ctx.fillRect(0, 0, width, height);
 
-      // sky / horizon
-      const skyGrad = ctx.createLinearGradient(0, 0, 0, height * 0.45);
+      // Sky
+      const horizonY = height * 0.38;
+      const skyGrad = ctx.createLinearGradient(0, 0, 0, horizonY);
       skyGrad.addColorStop(0, "#6ec5ff");
       skyGrad.addColorStop(1, "#1f2933");
       ctx.fillStyle = skyGrad;
-      ctx.fillRect(0, 0, width, height * 0.45);
+      ctx.fillRect(0, 0, width, horizonY);
 
-      // road
-      ctx.fillStyle = "#18181b";
-      ctx.fillRect(roadX, 0, roadWidth, height);
+      // Ground
+      const groundGrad = ctx.createLinearGradient(0, horizonY, 0, height);
+      groundGrad.addColorStop(0, "#020617");
+      groundGrad.addColorStop(1, "#020617");
+      ctx.fillStyle = groundGrad;
+      ctx.fillRect(0, horizonY, width, height - horizonY);
 
-      // lane stripes
-      ctx.strokeStyle = "#facc15";
-      ctx.lineWidth = 6;
-      ctx.setLineDash([28, 18]);
-      ctx.lineDashOffset = -laneStripeOffset;
+      // --- OUTRUN-STYLE ROAD GEOMETRY ---
+      const roadCenterX = width / 2;
+      const roadBottomY = height;
+      const roadTopY = horizonY;
+
+      const roadBottomWidth = width * 0.95; // wide at camera
+      const roadTopWidth = width * 0.2; // narrow at horizon
+
+      // Road body (big trapezoid)
+      ctx.fillStyle = "#111827";
       ctx.beginPath();
-      ctx.moveTo(width / 2, 0);
-      ctx.lineTo(width / 2, height);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      ctx.moveTo(roadCenterX - roadTopWidth / 2, roadTopY);
+      ctx.lineTo(roadCenterX + roadTopWidth / 2, roadTopY);
+      ctx.lineTo(roadCenterX + roadBottomWidth / 2, roadBottomY);
+      ctx.lineTo(roadCenterX - roadBottomWidth / 2, roadBottomY);
+      ctx.closePath();
+      ctx.fill();
 
-      // zombies
+      // Road glow edges
+      ctx.strokeStyle = "rgba(34,197,94,0.45)";
+      ctx.lineWidth = 10;
+      ctx.stroke();
+
+      // --- CENTER LANE STRIPES IN PERSPECTIVE ---
+      const stripeCount = 18;
+      const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+      ctx.strokeStyle = "#facc15";
+
+      for (let i = 0; i < stripeCount; i++) {
+        // t: 0 = horizon, 1 = bottom
+        const t = (i / stripeCount + laneStripeOffset) % 1;
+
+        const y = lerp(roadTopY, roadBottomY, t);
+        const nextY = lerp(roadTopY, roadBottomY, t + 0.04); // stripe length
+
+        // line width grows as it comes towards camera
+        const lineW = lerp(1.5, 7, t);
+
+        ctx.lineWidth = lineW;
+        ctx.beginPath();
+        ctx.moveTo(roadCenterX, y);
+        ctx.lineTo(roadCenterX, nextY);
+        ctx.stroke();
+      }
+
+      // --- ZOMBIES (scaled a bit by depth) ---
+      const roadBottomYClamped = roadBottomY;
       zombies.forEach((z) => {
+        const depthT = Math.max(
+          0,
+          Math.min(1, (z.y - roadTopY) / (roadBottomYClamped - roadTopY))
+        );
+        const scale = 0.6 + depthT * 0.9; // smaller far away, bigger near
+
+        const drawSize = z.size * scale;
+        const screenX = z.x;
+        const screenY = z.y;
+
         ctx.save();
-        ctx.translate(z.x + z.size / 2, z.y + z.size / 2);
-        const scale = 1 + (speedVal / maxSpeed) * 0.3;
-        ctx.scale(scale, scale);
+        ctx.translate(screenX + drawSize / 2, screenY + drawSize / 2);
         ctx.shadowColor = "rgba(248, 113, 113, 0.8)";
         ctx.shadowBlur = 18;
 
         // body
         ctx.fillStyle = "#22c55e";
-        ctx.fillRect(-z.size / 2, -z.size / 2, z.size, z.size * 0.7);
+        ctx.fillRect(-drawSize / 2, -drawSize / 2, drawSize, drawSize * 0.7);
 
         // head
         ctx.beginPath();
         ctx.fillStyle = "#16a34a";
-        ctx.arc(0, -z.size * 0.3, z.size * 0.35, 0, Math.PI * 2);
+        ctx.arc(0, -drawSize * 0.3, drawSize * 0.35, 0, Math.PI * 2);
         ctx.fill();
 
         // eyes
         ctx.fillStyle = "white";
         ctx.beginPath();
-        ctx.arc(-z.size * 0.12, -z.size * 0.34, z.size * 0.07, 0, Math.PI * 2);
-        ctx.arc(z.size * 0.12, -z.size * 0.34, z.size * 0.07, 0, Math.PI * 2);
+        ctx.arc(
+          -drawSize * 0.12,
+          -drawSize * 0.34,
+          drawSize * 0.07,
+          0,
+          Math.PI * 2
+        );
+        ctx.arc(
+          drawSize * 0.12,
+          -drawSize * 0.34,
+          drawSize * 0.07,
+          0,
+          Math.PI * 2
+        );
         ctx.fill();
 
         ctx.restore();
       });
 
-      // car (use Mason's generated ride)
+      // --- CAR (bottom centre) ---
+      const carDrawX = carX;
+      const carDrawY = carY;
+
       if (carImgRef.current && carImgRef.current.complete) {
-        ctx.drawImage(carImgRef.current, carX, carY, carWidth, carHeight);
+        ctx.drawImage(carImgRef.current, carDrawX, carDrawY, carWidth, carHeight);
       } else {
-        // fallback rectangle if image not ready
         ctx.fillStyle = "#38bdf8";
-        ctx.fillRect(carX, carY, carWidth, carHeight);
+        ctx.fillRect(carDrawX, carDrawY, carWidth, carHeight);
       }
 
-      // dashboard HUD box
+      // --- DASHBOARD HUD ---
       const dashW = width * 0.8;
       const dashH = height * 0.16;
       const dashX = (width - dashW) / 2;
