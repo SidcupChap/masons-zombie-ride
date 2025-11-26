@@ -80,20 +80,30 @@ export const DriveMode: React.FC<DriveModeProps> = ({
     const maxSpeed = tunedMaxSpeed;
     const accel = 180;
 
-    const roadWidth = width * 0.6;
-    const roadX = (width - roadWidth) / 2;
+    // OutRun road geometry (shared between update + render)
+    const horizonY = height * 0.38;
+    const roadTopY = horizonY;
+    const roadBottomY = height;
+    const roadCenterX = width / 2;
+    const roadTopWidth = width * 0.2;
+    const roadBottomWidth = width * 0.95;
 
-    const carWidth = roadWidth * 0.18;
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+    // Car setup – size and position around bottom of road
+    const carWidth = width * 0.12;
     const carHeight = carWidth * 1.4;
-    let carX = width / 2 - carWidth / 2;
-    const carY = height * 0.65;
+    const carY = height * 0.7;
+    let carX = roadCenterX - carWidth / 2;
 
-    type Zombie = { x: number; y: number; size: number; speed: number };
+    // Zombies live in "lane space" [-1, 1] and a screen Y
+    type Zombie = { lane: number; y: number; size: number; speed: number };
     let zombies: Zombie[] = [];
     let spawnTimer = 0;
     let spawnInterval = 1.0; // seconds (will decrease slightly)
 
-    let laneStripeOffset = 0; // 0–1 for perspective stripes
+    // Stripe phase 0–1
+    let laneStripeOffset = 0;
 
     let healthVal = 100;
     let scoreVal = 0;
@@ -133,18 +143,23 @@ export const DriveMode: React.FC<DriveModeProps> = ({
     const clamp = (v: number, min: number, max: number) =>
       Math.max(min, Math.min(max, v));
 
-    const spawnZombie = () => {
-      const edgePadding = roadWidth * 0.05;
-      const laneMinX = roadX + edgePadding;
-      const laneMaxX = roadX + roadWidth - edgePadding;
+    // Convert a (lane, y) zombie position to screen X
+    const zombieScreenX = (lane: number, y: number, size: number) => {
+      const t = clamp((y - roadTopY) / (roadBottomY - roadTopY), 0, 1);
+      const halfW = lerp(roadTopWidth / 2, roadBottomWidth / 2, t);
+      const leftEdge = roadCenterX - halfW;
+      const rightEdge = roadCenterX + halfW;
+      const laneNorm = (lane + 1) / 2; // -1..1 -> 0..1
+      return leftEdge + laneNorm * (rightEdge - leftEdge) - size / 2;
+    };
 
+    const spawnZombie = () => {
+      const lane = -0.8 + Math.random() * 1.6; // mostly within road
       const size = 30 + Math.random() * 25;
-      const x =
-        laneMinX +
-        Math.random() * (laneMaxX - laneMinX - size);
+      const y = roadTopY - size - 20; // just above horizon
       zombies.push({
-        x,
-        y: -size,
+        lane,
+        y,
         size,
         speed: 90 + Math.random() * 80,
       });
@@ -155,7 +170,7 @@ export const DriveMode: React.FC<DriveModeProps> = ({
       }
     };
 
-    // COLLISION (AABB)
+    // COLLISION (AABB) – uses screen-space X/Y for zombie
     const rectanglesOverlap = (
       x1: number,
       y1: number,
@@ -203,9 +218,17 @@ export const DriveMode: React.FC<DriveModeProps> = ({
       if (keys["ArrowRight"] || keys["d"] || touchRight) {
         carX += steering * dt;
       }
-      const carMinX = roadX + roadWidth * 0.05;
-      const carMaxX = roadX + roadWidth * 0.95 - carWidth;
-      carX = clamp(carX, carMinX, carMaxX);
+
+      // clamp car within road at carY using perspective
+      const tCar = clamp((carY - roadTopY) / (roadBottomY - roadTopY), 0, 1);
+      const halfWCar = lerp(roadTopWidth / 2, roadBottomWidth / 2, tCar);
+      const leftEdgeCar = roadCenterX - halfWCar;
+      const rightEdgeCar = roadCenterX + halfWCar;
+      carX = clamp(
+        carX,
+        leftEdgeCar + 10,
+        rightEdgeCar - carWidth - 10
+      );
 
       // lane stripes scroll (0–1 range for perspective stripes)
       laneStripeOffset =
@@ -219,17 +242,20 @@ export const DriveMode: React.FC<DriveModeProps> = ({
         spawnInterval = clamp(spawnInterval - 0.02, 0.45, 2.0);
       }
 
-      // move zombies
+      // move zombies & collisions
       zombies = zombies.filter((z) => {
         z.y += z.speed * dt + (speedVal / maxSpeed) * 80 * dt;
+
+        const zx = zombieScreenX(z.lane, z.y, z.size);
+        const zy = z.y;
 
         const carHit = rectanglesOverlap(
           carX,
           carY,
           carWidth,
           carHeight,
-          z.x,
-          z.y,
+          zx,
+          zy,
           z.size,
           z.size
         );
@@ -271,7 +297,6 @@ export const DriveMode: React.FC<DriveModeProps> = ({
       ctx.fillRect(0, 0, width, height);
 
       // Sky
-      const horizonY = height * 0.38;
       const skyGrad = ctx.createLinearGradient(0, 0, 0, horizonY);
       skyGrad.addColorStop(0, "#6ec5ff");
       skyGrad.addColorStop(1, "#1f2933");
@@ -286,13 +311,6 @@ export const DriveMode: React.FC<DriveModeProps> = ({
       ctx.fillRect(0, horizonY, width, height - horizonY);
 
       // --- OUTRUN-STYLE ROAD GEOMETRY ---
-      const roadCenterX = width / 2;
-      const roadBottomY = height;
-      const roadTopY = horizonY;
-
-      const roadBottomWidth = width * 0.95; // wide at camera
-      const roadTopWidth = width * 0.2; // narrow at horizon
-
       // Road body (big trapezoid)
       ctx.fillStyle = "#111827";
       ctx.beginPath();
@@ -310,18 +328,13 @@ export const DriveMode: React.FC<DriveModeProps> = ({
 
       // --- CENTER LANE STRIPES IN PERSPECTIVE ---
       const stripeCount = 18;
-      const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-
       ctx.strokeStyle = "#facc15";
 
       for (let i = 0; i < stripeCount; i++) {
-        // t: 0 = horizon, 1 = bottom
         const t = (i / stripeCount + laneStripeOffset) % 1;
 
         const y = lerp(roadTopY, roadBottomY, t);
-        const nextY = lerp(roadTopY, roadBottomY, t + 0.04); // stripe length
-
-        // line width grows as it comes towards camera
+        const nextY = lerp(roadTopY, roadBottomY, t + 0.04);
         const lineW = lerp(1.5, 7, t);
 
         ctx.lineWidth = lineW;
@@ -331,21 +344,21 @@ export const DriveMode: React.FC<DriveModeProps> = ({
         ctx.stroke();
       }
 
-      // --- ZOMBIES (scaled a bit by depth) ---
-      const roadBottomYClamped = roadBottomY;
+      // --- ZOMBIES (scaled by depth, always on road) ---
       zombies.forEach((z) => {
-        const depthT = Math.max(
+        const depthT = clamp(
+          (z.y - roadTopY) / (roadBottomY - roadTopY),
           0,
-          Math.min(1, (z.y - roadTopY) / (roadBottomYClamped - roadTopY))
+          1
         );
-        const scale = 0.6 + depthT * 0.9; // smaller far away, bigger near
-
+        const scale = 0.6 + depthT * 0.9;
         const drawSize = z.size * scale;
-        const screenX = z.x;
-        const screenY = z.y;
+
+        const zx = zombieScreenX(z.lane, z.y, drawSize);
+        const zy = z.y;
 
         ctx.save();
-        ctx.translate(screenX + drawSize / 2, screenY + drawSize / 2);
+        ctx.translate(zx + drawSize / 2, zy + drawSize / 2);
         ctx.shadowColor = "rgba(248, 113, 113, 0.8)";
         ctx.shadowBlur = 18;
 
@@ -381,47 +394,15 @@ export const DriveMode: React.FC<DriveModeProps> = ({
         ctx.restore();
       });
 
-      // --- CAR (bottom centre) ---
-      const carDrawX = carX;
-      const carDrawY = carY;
-
+      // --- CAR (bottom centre of road) ---
       if (carImgRef.current && carImgRef.current.complete) {
-        ctx.drawImage(carImgRef.current, carDrawX, carDrawY, carWidth, carHeight);
+        ctx.drawImage(carImgRef.current, carX, carY, carWidth, carHeight);
       } else {
         ctx.fillStyle = "#38bdf8";
-        ctx.fillRect(carDrawX, carDrawY, carWidth, carHeight);
+        ctx.fillRect(carX, carY, carWidth, carHeight);
       }
 
-      // --- DASHBOARD HUD ---
-      const dashW = width * 0.8;
-      const dashH = height * 0.16;
-      const dashX = (width - dashW) / 2;
-      const dashY = height - dashH - 10;
-
-      ctx.fillStyle = "rgba(0,0,0,0.7)";
-      ctx.fillRect(dashX, dashY, dashW, dashH);
-      ctx.strokeStyle = "#22c55e";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(dashX, dashY, dashW, dashH);
-
-      // speedometer arc
-      ctx.strokeStyle = "#facc15";
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.arc(
-        width / 2,
-        dashY + dashH * 0.7,
-        54,
-        Math.PI * 0.75,
-        Math.PI * 0.75 + (speedVal / maxSpeed) * Math.PI * 1.4
-      );
-      ctx.stroke();
-
-      ctx.fillStyle = "#bbf7d0";
-      ctx.font = "14px monospace";
-      ctx.fillText(`SPD ${Math.round(speedVal)} km/h`, dashX + 18, dashY + 26);
-      ctx.fillText(`HP  ${healthVal}`, dashX + 18, dashY + 48);
-      ctx.fillText(`SC  ${Math.round(scoreVal)}`, dashX + 18, dashY + 70);
+      // NOTE: in-canvas dashboard removed – React HUD handles SPD / HP / SC.
     };
 
     const loop = (time: number) => {
